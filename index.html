@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MECH AI</title>
+    <style>
+        /* --- VISUAL STYLES --- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+        }
+
+        #boot-screen {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #boot-screen h1 {
+            color: #00ff41;
+            font-size: 4rem;
+            margin-bottom: 50px;
+            text-shadow: 0 0 10px #00ff41;
+            letter-spacing: 10px;
+            animation: flicker 4s infinite;
+        }
+
+        @keyframes flicker {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            93% {
+                opacity: 1;
+            }
+
+            94% {
+                opacity: 0.8;
+            }
+
+            95% {
+                opacity: 1;
+            }
+
+            96% {
+                opacity: 0.9;
+            }
+
+            97% {
+                opacity: 1;
+            }
+        }
+
+        #boot-button {
+            padding: 20px 60px;
+            font-size: 1.5rem;
+            background: transparent;
+            color: #00ff41;
+            border: 3px solid #00ff41;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            letter-spacing: 3px;
+            transition: all 0.3s;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+
+        #boot-button:hover {
+            background: #00ff41;
+            color: #000;
+            box-shadow: 0 0 25px rgba(0, 255, 65, 0.6);
+        }
+
+        #main-screen {
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            position: relative;
+        }
+
+        #face-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            z-index: 1;
+            margin-bottom: 50px;
+        }
+
+        #face-container::before,
+        #face-container::after {
+            content: '';
+            position: absolute;
+            width: 110px;
+            height: 60px;
+            background: #000;
+            top: 100px;
+            z-index: 10;
+        }
+
+        #face-container::before {
+            left: 65px;
+            transform: rotate(22deg);
+        }
+
+        #face-container::after {
+            right: 65px;
+            transform: rotate(-22deg);
+        }
+
+        /* EYES */
+        .eye {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            background: radial-gradient(circle at 30% 30%, #33ff77, #00ff41 50%, #00aa2a);
+            border-radius: 50%;
+            top: 120px;
+            box-shadow: 0 0 15px #00ff41, inset 0 0 20px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s;
+            z-index: 5;
+        }
+
+        #left-eye {
+            left: 80px;
+        }
+
+        #right-eye {
+            right: 80px;
+        }
+
+        .eye.blink {
+            animation: blink 3s infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            92%,
+            100% {
+                height: 80px;
+                opacity: 1;
+            }
+
+            94% {
+                height: 8px;
+                opacity: 0.9;
+            }
+
+            96% {
+                height: 80px;
+                opacity: 1;
+            }
+        }
+
+        .eye.listening {
+            width: 100px;
+            height: 100px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 15px #00ff41, inset 0 0 20px rgba(0, 0, 0, 0.3);
+                transform: scale(1);
+            }
+
+            50% {
+                box-shadow: 0 0 30px #00ff41, 0 0 50px #00ff41, inset 0 0 20px rgba(0, 0, 0, 0.3);
+                transform: scale(1.05);
+            }
+        }
+
+        .eye.closed {
+            height: 5px;
+            background: #006622;
+            box-shadow: 0 0 5px #006622;
+        }
+
+        /* MOUTH */
+        #mouth {
+            position: absolute;
+            width: 120px;
+            height: 20px;
+            background: transparent;
+            border: 4px solid #00ff41;
+            border-top: none;
+            border-radius: 0 0 60px 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 280px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 10px rgba(0, 255, 65, 0.3);
+        }
+
+        #mouth.idle {
+            animation: breathe 4s ease-in-out infinite;
+        }
+
+        @keyframes breathe {
+
+            0%,
+            100% {
+                transform: translateX(-50%) scaleY(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: translateX(-50%) scaleY(0.95);
+                opacity: 0.9;
+            }
+        }
+
+        #mouth.speaking {
+            animation: speak 0.3s infinite;
+        }
+
+        @keyframes speak {
+
+            0%,
+            100% {
+                height: 20px;
+                border-radius: 0 0 60px 60px;
+            }
+
+            50% {
+                height: 40px;
+                border-radius: 0 0 80px 80px;
+            }
+        }
+
+        #mouth.closed {
+            height: 5px;
+            border-radius: 0;
+            border-bottom: 4px solid #006622;
+        }
+
+        #status-text {
+            color: #00ff41;
+            font-size: 1.2rem;
+            text-shadow: 0 0 5px #00ff41;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+        }
+
+        #log-container {
+            width: 90%;
+            max-width: 800px;
+            height: 100px;
+            background: #0a0a0a;
+            border: 1px solid #00ff41;
+            padding: 10px;
+            overflow-y: auto;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+            font-family: monospace;
+        }
+
+        #manual-controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+        }
+
+        #manual-controls:hover {
+            opacity: 1;
+        }
+
+        #manual-input {
+            padding: 8px;
+            background: #111;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+            width: 250px;
+            font-size: 0.9rem;
+        }
+
+        #send-btn {
+            padding: 8px 15px;
+            background: #00ff41;
+            border: none;
+            color: #000;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="boot-screen">
+        <h1>MECH AI</h1>
+        <button id="boot-button">BOOT SYSTEM</button>
+    </div>
+
+    <div id="main-screen">
+        <div id="face-container">
+            <div class="eye closed" id="left-eye"></div>
+            <div class="eye closed" id="right-eye"></div>
+            <div id="mouth" class="closed"></div>
+        </div>
+
+        <div id="status-text">OFFLINE</div>
+        <div id="log-container"></div>
+
+        <div id="manual-controls">
+            <input type="text" id="manual-input" placeholder="Manual Override...">
+            <button id="send-btn">SEND</button>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURATION
+        const BACKEND_URL = "http://127.0.0.1:5000/chat";
+        // List all possible ways you might say the name
+        const WAKE_WORDS = ["mohan", "mech", "mac", "make", "hello mech", "hey mech"];
+
+        // ELEMENTS
+        const bootScreen = document.getElementById('boot-screen');
+        const mainScreen = document.getElementById('main-screen');
+        const bootButton = document.getElementById('boot-button');
+        const leftEye = document.getElementById('left-eye');
+        const rightEye = document.getElementById('right-eye');
+        const mouth = document.getElementById('mouth');
+        const statusText = document.getElementById('status-text');
+        const logs = document.getElementById('log-container');
+        const manualInput = document.getElementById('manual-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        let recognition;
+        let isSpeaking = false;
+        let isActive = false;
+
+        // LOGGER FUNCTION
+        function addLog(text, sender) {
+            const div = document.createElement('div');
+            if (sender === 'sys') div.style.color = '#00ffff';
+            else if (sender === 'error') div.style.color = '#ff3333';
+            else if (sender === 'user') div.style.color = '#ffffff';
+            else div.style.color = '#00ff41'; // bot
+
+            div.innerText = `[${sender.toUpperCase()}] ${text}`;
+            logs.appendChild(div);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        // SPEECH RECOGNITION SETUP
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                if (!isSpeaking) {
+                    statusText.textContent = 'LISTENING...';
+                    openEyes('listening');
+                }
+            };
+
+            recognition.onresult = (event) => {
+                if (isSpeaking) return; // Ignore input while speaking
+
+                const rawText = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+
+                // --- WAKE WORD DETECTION LOGIC ---
+                // 1. Check if ANY wake word is in the sentence
+                const foundWakeWord = WAKE_WORDS.find(word => rawText.includes(word));
+
+                if (foundWakeWord) {
+                    addLog(`Wake Word: "${foundWakeWord}"`, "sys");
+
+                    // 2. Remove the name to get the command (e.g. "mohan time" -> "time")
+                    let command = rawText.replace(foundWakeWord, "").trim();
+
+                    // 3. If command is empty (User just said "Mohan"), wait for input
+                    if (command === "") {
+                        speak("I am listening.");
+                    } else {
+                        // 4. Send the cleaned command to Python
+                        processCommand(command);
+                    }
+                } else {
+                    // Optional: Log things it heard that didn't have the wake word
+                    // addLog(`Ignored: ${rawText}`, "sys");
+                }
+            };
+
+            recognition.onerror = (e) => { console.error(e); };
+            recognition.onend = () => { if (isActive && !isSpeaking) recognition.start(); };
+        } else {
+            alert("Speech Recognition not supported in this browser. Use Chrome.");
+        }
+
+        // STARTUP SEQUENCE
+        bootButton.addEventListener('click', () => {
+            bootScreen.style.display = 'none';
+            mainScreen.style.display = 'flex';
+
+            setTimeout(() => {
+                openEyes('blink');
+                mouth.classList.remove('closed'); mouth.classList.add('idle');
+                statusText.textContent = 'INITIALIZING...';
+                addLog("System Online.", "sys");
+            }, 500);
+
+            setTimeout(() => {
+                if (recognition) {
+                    isActive = true;
+                    recognition.start();
+                    statusText.textContent = 'READY';
+                }
+            }, 1500);
+        });
+
+        // ANIMATION CONTROLS
+        function openEyes(mode = 'blink') {
+            leftEye.classList.remove('closed', 'blink', 'listening');
+            rightEye.classList.remove('closed', 'blink', 'listening');
+            if (mode === 'blink') {
+                leftEye.classList.add('blink'); rightEye.classList.add('blink');
+            } else if (mode === 'listening') {
+                leftEye.classList.add('listening'); rightEye.classList.add('listening');
+            }
+        }
+
+        // SEND TO PYTHON
+        async function processCommand(command) {
+            statusText.textContent = 'PROCESSING...';
+            addLog(command, "user");
+
+            try {
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: command })
+                });
+
+                const data = await response.json();
+                addLog(data.reply, "bot");
+                speak(data.reply);
+
+            } catch (error) {
+                statusText.textContent = 'ERROR';
+                addLog("Cannot connect to Python Server", "error");
+                speak("Connection error.");
+            }
+        }
+
+        // TEXT TO SPEECH
+        function speak(text) {
+            isSpeaking = true;
+            statusText.textContent = 'SPEAKING';
+            mouth.classList.remove('idle'); mouth.classList.add('speaking');
+
+            // Temporarily stop listening so the bot doesn't hear itself
+            if (recognition) recognition.stop();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1;
+            utterance.pitch = 1;
+
+            utterance.onend = () => {
+                isSpeaking = false;
+                mouth.classList.remove('speaking'); mouth.classList.add('idle');
+                statusText.textContent = 'READY';
+                if (isActive) recognition.start();
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // MANUAL INPUT
+        sendBtn.addEventListener('click', () => {
+            const txt = manualInput.value.trim();
+            if (txt) {
+                processCommand(txt); // Send directly without wake word check
+                manualInput.value = "";
+            }
+        });
+        manualInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendBtn.click();
+        });
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,11 @@
+flask>=2.2
+flask-cors
+firebase-admin
+ollama
+duckduckgo-search
+ultralytics
+opencv-python-headless
+pytz
+python-dotenv
+pyttsx3
+paho-mqtt
