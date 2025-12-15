@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, db
-import ollama
+import google.generativeai as genai  # <--- CHANGED: Gemini Library
 from duckduckgo_search import DDGS
 from ultralytics import YOLO
 from dotenv import load_dotenv
@@ -18,6 +18,16 @@ import paho.mqtt.client as mqtt
 
 # --- LOAD SECRETS ---
 load_dotenv()
+
+# Configure Gemini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    ai_model = genai.GenerativeModel('gemini-1.5-flash') # Fast model
+    print("✓ Gemini API Configured")
+else:
+    ai_model = None
+    print("⚠️ Gemini API Key missing in .env")
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -44,7 +54,6 @@ except:
 firebase_enabled = False
 try:
     if not firebase_admin._apps:
-        # Ensure 'firebase_key.json' is in your folder
         cred = credentials.Certificate('firebase_key.json')
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://home-39238-default-rtdb.firebaseio.com/'
@@ -100,7 +109,6 @@ def send_robot_command(direction):
 # ==================== Logic Functions ====================
 
 def get_current_datetime():
-    """Returns the current date and time specifically for India (IST)."""
     try:
         ist = pytz.timezone('Asia/Kolkata')
         now = datetime.datetime.now(ist)
@@ -112,13 +120,9 @@ def get_current_datetime():
 # --- CUSTOM RESPONSES ---
 CUSTOM_RESPONSES = {
     'babita': "She is a teacher at SMVITM and she takes IoT for you. SMVITM da papa da teacher!",
-    'babita mam': "She is a teacher at SMVITM and she takes IoT for you. SMVITM da papa da teacher!",
-    'who is babita': "She is a teacher at SMVITM and she takes IoT for you. SMVITM da papa da teacher!",
+    'babita mam': "She is a teacher at SMVITM and she takes IoT for you.",
     'enca ullar': "Yān eḍḍe ulle",
     'enna ullar': "Yān eḍḍe ulle",
-    'ninna pudar': "Enna pudar mech",
-    'gopal': "The don of Belman, the father of Ammekunne!",
-    'who is gopal': "The don of Belman, the father of Ammekunne!",
     'mech': "Yes boss, I am listening.",
     'who are you': "I am Mech, your personal robot assistant."
 }
@@ -130,28 +134,22 @@ def check_custom_response(message):
             return response
     return None
 
-# --- RELAY CONTROL (Firebase) ---
+# --- RELAY CONTROL ---
 RELAY_MAP = {'one': 1, '1': 1, 'two': 2, '2': 2, 'three': 3, '3': 3, 'four': 4, '4': 4}
 
 def control_lights(message):
     if not firebase_enabled or relay_ref is None: return None
     msg = message.lower()
-    
-    state = None
-    if 'on' in msg: state = True
-    elif 'off' in msg: state = False
-    else: return None
+    state = True if 'on' in msg else False if 'off' in msg else None
+    if state is None: return None
 
-    triggered = []
-
-    # Check "Turn ALL on/off"
     if 'all' in msg:
         for i in range(1, 5): 
             try: relay_ref.child(f'relay{i}').set(state)
             except: pass
         return f"Turned {'on' if state else 'off'} ALL lights."
 
-    # Check Specific (1, 2, 3, 4)
+    triggered = []
     for word, num in RELAY_MAP.items():
         if word in msg:
             try:
@@ -164,80 +162,88 @@ def control_lights(message):
         return f"Turned {'on' if state else 'off'} light {', '.join(unique)}"
     return None
 
-# --- OBJECT TRACKING (Reversed Polarity) ---
+# --- OBJECT TRACKING LOOP (OPTIMIZED) ---
 def tracking_loop():
-    """Runs in background. Finds object -> Moves robot."""
+    """Finds object -> Moves robot towards it."""
     print("▶ STARTING TRACKING LOOP")
     robot_state['tracking'] = True
     start_time = time.time()
     
-    # Run for 15 seconds max (safety timeout)
-    while robot_state['tracking'] and (time.time() - start_time < 15):
+    # 1. Open Camera ONCE (Optimized)
+    cam = cv2.VideoCapture(0)
+    if not cam.isOpened():
+        print("❌ Camera failed to open")
+        robot_state['tracking'] = False
+        return
+
+    # Run for 20 seconds max (safety timeout)
+    while robot_state['tracking'] and (time.time() - start_time < 20):
         if not vision_model: break
         
-        try:
-            cam = cv2.VideoCapture(0)
-            ret, frame = cam.read()
-            cam.release()
-            if not ret: continue
+        ret, frame = cam.read()
+        if not ret: continue
 
-            height, width, _ = frame.shape
-            results = vision_model(frame, verbose=False)
-            
-            # Find largest object
-            best_box = None
-            max_area = 0
+        height, width, _ = frame.shape
+        results = vision_model(frame, verbose=False)
+        
+        # Find largest object (person/cat/dog, etc)
+        best_box = None
+        max_area = 0
 
-            for r in results:
-                for box in r.boxes:
-                    if float(box.conf[0]) < 0.5: continue
-                    x1, y1, x2, y2 = box.xyxy[0]
-                    area = (x2 - x1) * (y2 - y1)
-                    if area > max_area:
-                        max_area = area
-                        best_box = box
+        for r in results:
+            for box in r.boxes:
+                if float(box.conf[0]) < 0.5: continue # Confidence threshold
+                x1, y1, x2, y2 = box.xyxy[0]
+                area = (x2 - x1) * (y2 - y1)
+                if area > max_area:
+                    max_area = area
+                    best_box = box
+        
+        if best_box:
+            x1, y1, x2, y2 = best_box.xyxy[0]
+            obj_center_x = (x1 + x2) / 2
             
-            if best_box:
-                x1, y1, x2, y2 = best_box.xyxy[0]
-                obj_center_x = (x1 + x2) / 2
-                obj_label = vision_model.names[int(best_box.cls[0])]
-
-                deadzone_left = width * 0.35
-                deadzone_right = width * 0.65
-                
-                # Turn Logic (Left/Right are standard)
-                if obj_center_x < deadzone_left:
-                    send_robot_command('left')
-                    time.sleep(0.1)
-                    send_robot_command('stop')
-                    
-                elif obj_center_x > deadzone_right:
-                    send_robot_command('right')
-                    time.sleep(0.1)
-                    send_robot_command('stop')
-                    
-                else:
-                    # FORWARD LOGIC (Reversed Polarity)
-                    # If object is far, we want to go FORWARD.
-                    # Because motors are reversed, we send 'backward'.
-                    obj_height = y2 - y1
-                    if obj_height < (height * 0.40):
-                        print(f"⬆ Moving Physically Forward (Sending 'backward')")
-                        send_robot_command('backward') 
-                        time.sleep(0.3)
-                        send_robot_command('stop')
-                    else:
-                        print(f"🛑 Stop (Close enough to {obj_label})")
+            # Deadzones for Steering
+            deadzone_left = width * 0.35   # < 35% is Left
+            deadzone_right = width * 0.65  # > 65% is Right
             
-            else:
+            # --- STEERING LOGIC ---
+            if obj_center_x < deadzone_left:
+                print("⬅ Turning Left")
+                send_robot_command('left')
+                time.sleep(0.1)
                 send_robot_command('stop')
+                
+            elif obj_center_x > deadzone_right:
+                print("➡ Turning Right")
+                send_robot_command('right')
+                time.sleep(0.1)
+                send_robot_command('stop')
+                
+            else:
+                # --- DISTANCE LOGIC (Reversed Polarity) ---
+                # obj_height tells us distance. Small height = Far away.
+                obj_height = y2 - y1
+                
+                # If object takes up less than 40% of screen height -> Move Forward
+                if obj_height < (height * 0.40):
+                    print(f"⬆ Moving Forward (Target Far)")
+                    # REVERSED: Send 'backward' to move physically forward
+                    send_robot_command('backward') 
+                    time.sleep(0.3)
+                    send_robot_command('stop')
+                else:
+                    print(f"🛑 Target Close (Stopping)")
+                    send_robot_command('stop')
+        else:
+            # No object found -> Stop
+            send_robot_command('stop')
 
-            time.sleep(0.1)
+        # Slight delay to prevent CPU overload
+        time.sleep(0.05)
 
-        except Exception as e:
-            print(f"Tracking error: {e}")
-            break
-    
+    # Cleanup
+    cam.release()
     send_robot_command('stop')
     robot_state['tracking'] = False
     print("⏹ END TRACKING LOOP")
@@ -253,74 +259,74 @@ def chat():
     if not user_query: return jsonify({"reply": "I didn't hear you."})
     print(f"\n💬 User: {user_query}")
 
-    # --- PRIORITY 1: STOP EVERYTHING ---
+    # 1. Stop Everything
     if 'stop' in q_lower:
         robot_state['tracking'] = False
         send_robot_command('stop')
         return jsonify({"reply": "Stopping everything."})
 
-    # --- PRIORITY 2: CUSTOM RESPONSES ---
+    # 2. Custom Responses
     custom_reply = check_custom_response(user_query)
-    if custom_reply:
-        return jsonify({"reply": custom_reply})
+    if custom_reply: return jsonify({"reply": custom_reply})
 
-    # --- PRIORITY 3: RELAY CONTROL ---
+    # 3. Relay Control
     if any(k in q_lower for k in ['light', 'relay', 'turn on', 'turn off']):
         light_resp = control_lights(user_query)
         if light_resp: return jsonify({"reply": light_resp})
 
-    # --- PRIORITY 4: FOLLOW OBJECT ---
-    if any(k in q_lower for k in ['follow', 'track', 'go to']) and 'object' in q_lower:
+    # 4. Follow/Tracking Trigger
+    if any(k in q_lower for k in ['follow', 'track', 'come here']) and 'object' in q_lower:
         if not robot_state['tracking']:
             threading.Thread(target=tracking_loop).start()
             return jsonify({"reply": "Okay, tracking object now."})
         else:
             return jsonify({"reply": "I am already tracking."})
 
-    # --- PRIORITY 5: MANUAL MOVEMENT (Reversed Polarity) ---
+    # 5. Manual Movement (Reversed Polarity)
     if 'forward' in q_lower:
-        # User says Forward -> Send 'backward' -> Robot moves Physically Forward
         send_robot_command('backward') 
         threading.Timer(2.0, send_robot_command, args=['stop']).start()
         return jsonify({"reply": "Moving forward"})
     
     if 'backward' in q_lower:
-        # User says Backward -> Send 'forward' -> Robot moves Physically Backward
         send_robot_command('forward') 
         threading.Timer(2.0, send_robot_command, args=['stop']).start()
         return jsonify({"reply": "Moving backward"})
 
     if 'left' in q_lower:
         send_robot_command('left')
-        threading.Timer(2.0, send_robot_command, args=['stop']).start()
+        threading.Timer(0.5, send_robot_command, args=['stop']).start()
         return jsonify({"reply": "Turning left"})
 
     if 'right' in q_lower:
         send_robot_command('right')
-        threading.Timer(0.5, send_robot_command, args=['stop']).start() # 500ms
+        threading.Timer(0.5, send_robot_command, args=['stop']).start()
         return jsonify({"reply": "Turning right"})
 
-    # --- PRIORITY 6: TIME / DATE ---
-    if any(t in q_lower for t in ['time', 'date', 'today', 'clock']):
+    # 6. Time/Date
+    if any(t in q_lower for t in ['time', 'date', 'today']):
         d, t = get_current_datetime()
-        if 'time' in q_lower or 'clock' in q_lower:
-            return jsonify({"reply": f"The time is {t}."})
-        return jsonify({"reply": f"Today is {d}."})
+        return jsonify({"reply": f"It is {t}, {d}."})
 
-    # --- PRIORITY 7: AI + SEARCH ---
+    # 7. AI + Search (Gemini)
     search_context = ""
     if any(w in q_lower for w in ['search', 'news', 'who is', 'what is', 'weather']):
-        web_data = DDGS().text(user_query, max_results=2)
-        if web_data: search_context = f"\n\nSearch Results:\n{web_data}"
+        try:
+            web_data = DDGS().text(user_query, max_results=2)
+            if web_data: search_context = f"\n\nSearch Results:\n{web_data}"
+        except: pass
     
-    try:
-        response = ollama.chat(model='llama3.2', messages=[
-            {'role': 'system', 'content': "You are Mech. Short answers."},
-            {'role': 'user', 'content': f"{user_query}{search_context}"}
-        ])
-        return jsonify({"reply": response['message']['content']})
-    except:
-        return jsonify({"reply": "I'm having trouble thinking."})
+    # GEMINI GENERATION
+    if ai_model:
+        try:
+            prompt = f"You are Mech, a robot assistant. Keep answers short (under 20 words).\nUser: {user_query}\n{search_context}"
+            response = ai_model.generate_content(prompt)
+            return jsonify({"reply": response.text})
+        except Exception as e:
+            print(f"Gemini Error: {e}")
+            return jsonify({"reply": "I am having trouble connecting to my brain."})
+    else:
+        return jsonify({"reply": "My AI brain is not configured."})
 
 if __name__ == '__main__':
     d, t = get_current_datetime()
